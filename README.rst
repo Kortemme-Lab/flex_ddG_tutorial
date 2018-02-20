@@ -29,7 +29,7 @@ Run Flex ddG
    Important flags explained:
 
    * ``-ex1 -ex2`` tell Rosetta's side chain packing algorithm to sample extra subrotamers for chi1 and chi2 angles (`Packer documentation <https://www.rosettacommons.org/docs/latest/rosetta_basics/options/packing-options>`_)
-   * ``mutate_resfile_relpath=`` is an input file that tells Rosetta which protein positions to mutate in the ddG calculation. The resfile must start with ``NATAA``. See the `Rosetta documentation <https://www.rosettacommons.org/docs/latest/rosetta_basics/file_types/resfiles>`_ for more information on resfiles.
+   * ``mutate_resfile_relpath=`` is an input file that tells Rosetta which protein positions to mutate in the ΔΔG calculation. The resfile must start with ``NATAA``. See the `Rosetta documentation <https://www.rosettacommons.org/docs/latest/rosetta_basics/file_types/resfiles>`_ for more information on resfiles.
    * ``number_backrub_trials=`` is the number of backrub sampling steps. 35,000 steps gives good performance for a variety of inputs, although it is likely similar performance could be achieved for certain cases with less sampling.
    * ``max_minimization_iter=`` is the maximum number of minimization gradient descent steps to take. 5000 is the normal, benchmarked value.
    * ``abs_score_convergence_thresh=`` is the maximum allowed change in total model score after minimization (comparing initial score to score after minimization). If this change exceeds this threshold, then another minimization cycle will be started.
@@ -40,7 +40,7 @@ Run Flex ddG
 Analysis
 --------
 
-In normal usage, you would run the flex ddG protocol 35+ times (at 35,000 backrub steps each run), and average the resulting ddG predictions for best performance. For the purposes of making this tutorial run quickly on an average laptop, we will generate fewer output models for many fewer backrub and minimization steps.
+In normal usage, you would run the flex ddG protocol 35+ times (at 35,000 backrub steps each run), and average the resulting ΔΔG predictions for best performance. For the purposes of making this tutorial run quickly on an average laptop, we will generate fewer output models for many fewer backrub and minimization steps.
 
 Python analysis
 ^^^^^^^^^^^^^^^
