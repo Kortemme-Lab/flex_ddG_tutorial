@@ -5,7 +5,7 @@ import sys
 import os
 import subprocess
 
-use_multiprocessing = False
+use_multiprocessing = True
 if use_multiprocessing:
     import multiprocessing
     max_cpus = 2 # We might want to not run on the full number of cores, as Rosetta take about 2 Gb of memory per instance
@@ -42,7 +42,7 @@ def run_flex_ddg( name, input_path, input_pdb_path, chains_to_move, nstruct_i ):
         '-ex2',
     ]
 
-    log_path = os.path.join(output_directory, name + '.log')
+    log_path = os.path.join(output_directory, 'rosetta.out')
 
     print 'Running Rosetta with args:'
     print ' '.join(flex_ddg_args)
