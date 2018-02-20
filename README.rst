@@ -53,6 +53,8 @@ Run the analysis script as follows:
 
   python analyze_flex_ddG.py output
 
+The script will print to the terminal (in separate table blocks) the wild-type interface binding ΔG score (wt_dG), the mutant interface ΔG (mut_dG), and the ΔΔG of binding post-mutation. These scores are also written to a .csv file in analysis_output. Scores for both of the checkpoint steps (5 backrub steps and 10 backrub steps) are calculated. For the mutant ΔΔG, the ΔΔG score is also calculated and reweighted with the fitted GAM model [KB2018]_.
+
 References
 ----------
 
