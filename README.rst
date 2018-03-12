@@ -11,6 +11,8 @@ In this activity, you will utilize the Flex ddG [KB2018]_ protocol within Rosett
 
 This protocol uses the "backrub" protocol [CS2018]_ implemented in `Rosetta <https://www.rosettacommons.org>`_ to sample conformational diversity.
 
+It is recommeded that you use weekly release "Rosetta 2017.52", which was released on Wednesday, January 3, 2018, or any more recent version of Rosetta to run this tutorial.
+
 The flex ddG protocol is outlined below (Fig 1. from [KB2018]_):
 
 .. image:: fig-overview.png
