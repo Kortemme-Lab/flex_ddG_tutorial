@@ -57,6 +57,17 @@ Run the analysis script as follows:
 
 The script will print to the terminal (in separate table blocks) the wild-type interface binding ΔG score (wt_dG), the mutant interface ΔG (mut_dG), and the ΔΔG of binding post-mutation. These scores are also written to a .csv file in analysis_output. Scores for both of the checkpoint steps (5 backrub steps and 10 backrub steps) are calculated. For the mutant ΔΔG, the ΔΔG score is also calculated and reweighted with the fitted GAM model [KB2018]_.
 
+Extract structures
+^^^^^^^^^^^^^^^^^^
+
+If you are interested in viewing or using the generated backrub, wildtype minimized, or mutant minimized structures, you can extract them from the struct.db3 file in the output. A convenience wrapper script is provided to do this, and can be run as folllows:
+
+::
+
+   python3 extract_structures.py output
+
+The script will recursively find all output struct.db3 files, run Rosetta to output PDBs, and rename the PDBs to more informative names.
+
 References
 ----------
 
