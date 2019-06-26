@@ -36,6 +36,7 @@ Run Flex ddG
    * ``max_minimization_iter=`` is the maximum number of minimization gradient descent steps to take. 5000 is the normal, benchmarked value.
    * ``abs_score_convergence_thresh=`` is the maximum allowed change in total model score after minimization (comparing initial score to score after minimization). If this change exceeds this threshold, then another minimization cycle will be started.
    * ``backrub_trajectory_stride=`` after every N backrub steps, finish the flex ddG calculations. This allows protocol performance to be judged at intermediate number of backrub sampling steps without running a separate trajectory. In general, this can be set to the same number as ``number_backrub_trials``, but it may be useful for benchmarking purposes to set this at an intermediate value.
+   * ``chainstomove=`` This arguments is passed as a Rosetta Script variable to the InterfaceDdGMover as the "chain_name" argument. It defines one side of the interface by specifying all of the chains that make up that side. Can be a single chain as in "B" or multiple chains, as in "L,H".
 
 #. Output will be saved in a new directory named ``output``
 
