@@ -10,7 +10,7 @@ import math
 import collections
 import threading
 
-use_multiprocessing = True
+use_multiprocessing = False
 if use_multiprocessing:
     import multiprocessing
 
@@ -143,6 +143,8 @@ def extract_structures( struct_db, rename_function = None ):
 
     working_directory = os.path.dirname( struct_db )
     rosetta_outfile_path = os.path.join(working_directory, 'structure_output.txt' )
+    if not use_multiprocessing:
+        print(rosetta_outfile_path)
     rosetta_outfile = open( rosetta_outfile_path, 'w')
     if not use_multiprocessing:
         print( ' '.join( args ) )
