@@ -1,0 +1,32 @@
+Backrub step command line example:
+
+rosetta_scripts.linuxgccrelease
+-parser:protocol flex_ddG-backrub_step.xml
+-s wt_pdb_path # Starting WT crystal structure
+-in:file:fullatom
+-parser:script_vars
+mutate_resfile_relpath=%s # Path to a resfile specifying mutant positions. Can be any set of mutations (only the positions matter), as mutations are made in the next step. Positions need to be known now to pick backrub region.
+backrub_kt=1.2
+backrub_trials=36000
+backrub_stride=12000
+neighbor_distance=12.0
+sc_sample_rotwells_unif=0
+min_tolerance=0.000001
+min_max_iter=5000
+min_abs_score_convergence_threshold=1.0
+
+Mutation step command line example:
+
+rosetta_scripts.linuxgccrelease
+-parser:protocol flex_ddG-mutation_step.xml
+-s wt_minimized_pdb_path # Path to the WT minimized PDB structure from the first script, needed to score ddG calculation
+-native # Path to the starting WT crystal structure, needed so that same neighbor residue bubble is selected
+-in:file:fullatom
+-parser:script_vars
+chainstomove=%s
+mutate_resfile_relpath=%s # Path to resfile specifying mutations
+min_tolerance=0.000001
+min_max_iter=5000
+neighbor_distance=12.0
+min_abs_score_convergence_threshold=1.0
+backrub_pdb_path=%s # Path to backrub PDB output from earlier step, mutations will be applied to this model

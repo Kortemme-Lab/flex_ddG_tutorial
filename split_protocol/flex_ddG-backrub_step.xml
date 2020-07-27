@@ -1,0 +1,108 @@
+<ROSETTASCRIPTS>
+  <SCOREFXNS>
+    <ScoreFunction name="fa_fxn" weights="talaris2014">
+    </ScoreFunction>
+    <ScoreFunction name="fa_fxn_cst" weights="talaris2014">
+      <Reweight scoretype="atom_pair_constraint" weight="1.0"/>
+      <Set fa_max_dis="9.0"/>
+    </ScoreFunction>
+  </SCOREFXNS>
+
+  <!-- ### Only required input - mutation resfile ### -->
+  <!-- #### All residues must be set to be NATAA packable at top of resfile ### -->
+  <TASKOPERATIONS>
+    <ReadResfile name="res_mutate" filename="%%mutate_resfile_relpath%%"/>
+  </TASKOPERATIONS>
+
+  <RESIDUE_SELECTORS>
+    <Task name="resselector" fixed="0" packable="0" designable="1" task_operations="res_mutate"/>
+    <Neighborhood name="bubble" selector="resselector" distance="%%neighbor_distance%%" include_focus_in_subset="true"/>
+    <PrimarySequenceNeighborhood name="bubble_adjacent" selector="bubble" lower="1" upper="1"/>
+    <StoredResidueSubset name="restore_neighbor_shell" subset_name="neighbor_shell"/>
+    <Not name="everythingelse" selector="restore_neighbor_shell"/>
+  </RESIDUE_SELECTORS>
+  <TASKOPERATIONS>
+    <OperateOnResidueSubset name="repackonly" selector="restore_neighbor_shell">
+      <RestrictToRepackingRLT/>
+    </OperateOnResidueSubset>
+    <OperateOnResidueSubset name="norepack" selector="everythingelse">
+      <PreventRepackingRLT/>
+    </OperateOnResidueSubset>
+    <UseMultiCoolAnnealer name="multicool" states="6"/>
+    <ExtraChiCutoff name="extrachizero" extrachi_cutoff="0"/>
+    <InitializeFromCommandline name="commandline_init"/>
+    <RestrictToRepacking name="restrict_to_repacking"/>
+  </TASKOPERATIONS>
+
+  <FILTERS>
+  </FILTERS>
+
+  <MOVERS>
+    <StoreResidueSubset name="neighbor_shell_storer" subset_name="neighbor_shell" residue_selector="bubble_adjacent" />
+
+    <AddConstraintsToCurrentConformationMover name="addcst" use_distance_cst="1" coord_dev="0.5" min_seq_sep="0" max_distance="9" CA_only="1" bound_width="0.0" cst_weight="0.0"/>
+    <ClearConstraintsMover name="clearcst"/>
+    <MinMover name="minimize" scorefxn="fa_fxn_cst" chi="1" bb="1" type="lbfgs_armijo_nonmonotone" tolerance="%%min_tolerance%%" max_iter="%%min_max_iter%%" abs_score_convergence_threshold="%%min_abs_score_convergence_threshold%%"/>
+
+    <PackRotamersMover name="repack" scorefxn="fa_fxn" task_operations="commandline_init,repackonly,norepack,multicool"/>
+
+    <SavePoseMover name="input_struct_spm" reference_name="input_struct"/>
+    <SavePoseMover name="input_struct_lpm" restore_pose="1" reference_name="input_struct"/>
+    <SavePoseMover name="min_input_struct_spm" reference_name="min_input_struct"/>
+    <SavePoseMover name="min_input_struct_lpm" restore_pose="1" reference_name="min_input_struct"/>
+
+    <ReportToDB name="structreport" batch_description="interface_ddG_struct" database_name="struct.db3">
+      <PoseConformationFeatures/>
+      <PdbDataFeatures/>
+      <JobDataFeatures/>
+      <ResidueFeatures/>
+      <PoseCommentsFeatures/>
+      <ProteinResidueConformationFeatures/>
+      <ResidueConformationFeatures/>
+      <RotamerFeatures/>
+      <ResidueBurialFeatures/>
+      <ProteinRMSDFeatures reference_name="min_input_struct"/>
+    </ReportToDB>
+
+    <ScoreMover name="apply_score" scorefxn="fa_fxn_cst" verbose="0"/>
+
+    <PDBTrajectoryRecorder name="dump_wt_minimized" stride="1" filename="wt_minimized.pdb"/>
+
+    <ParsedProtocol name="finish_wt_post_backrub">
+      <Add mover_name="structreport"/>
+
+      <Add mover_name="repack"/>
+
+      <Add mover_name="addcst"/>
+      <Add mover_name="minimize"/>
+      <Add mover_name="clearcst"/>
+
+      <Add mover_name="structreport"/>
+      <Add mover_name="dump_wt_minimized"/>
+    </ParsedProtocol>
+
+    <BackrubProtocol name="backrub" mc_kt="%%backrub_kt%%" ntrials="%%backrub_trials%%" pivot_residue_selector="restore_neighbor_shell" task_operations="restrict_to_repacking,commandline_init,extrachizero" recover_low="0" trajectory_stride="%%backrub_stride%%" trajectory_apply_mover="finish_wt_post_backrub" trajectory="1" scorefxn="fa_fxn"/>
+
+  </MOVERS>
+  <APPLY_TO_POSE>
+  </APPLY_TO_POSE>
+  <PROTOCOLS>
+    <Add mover_name="input_struct_spm"/>
+    <Add mover_name="addcst"/>
+    <Add mover_name="apply_score"/> <!-- Necessary to initialize neighbor graph -->
+    <Add mover_name="neighbor_shell_storer"/>
+
+    <Add mover_name="minimize"/>
+
+    <Add mover_name="clearcst"/>
+    <Add mover_name="min_input_struct_spm"/>
+
+    <Add mover_name="input_struct_lpm"/>
+    <Add mover_name="structreport"/>
+    <Add mover_name="min_input_struct_lpm"/>
+    <Add mover_name="structreport"/>
+
+    <Add mover_name="backrub"/>
+  </PROTOCOLS>
+  <OUTPUT />
+</ROSETTASCRIPTS>
