@@ -39,8 +39,6 @@
 
     <PackRotamersMover name="mutate" scorefxn="fa_fxn" task_operations="commandline_init,res_mutate,norepack,multicool"/>
 
-    <FastRelax name="fast_relax_mover" scorefxn="fa_fxn_cst"/>
-
     <ReportToDB name="dbreport" batch_description="interface_ddG" database_name="ddG.db3">
       <ResidueFeatures/>
       <ScoreTypeFeatures/>
@@ -81,6 +79,7 @@
 
     <Add mover_name="addcst"/>
     <Add mover_name="apply_score"/>
+    <Add mover_name="clearcst"/>
     <Add mover_name="mutate"/>
 
     <Add mover_name="addcst"/>
@@ -89,8 +88,6 @@
     <Add mover_name="structreport"/>
 
     <Add mover_name="int_ddG_mover"/>
-
-    <Add mover_name="fast_relax_mover"/>
 
     <Add mover_name="dbreport"/>
   </PROTOCOLS>
