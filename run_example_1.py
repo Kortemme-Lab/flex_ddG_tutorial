@@ -25,6 +25,11 @@ number_backrub_trials = 10 # Normally 35000
 backrub_trajectory_stride = 5 # Can be whatever you want, if you would like to see results from earlier time points in the backrub trajectory. 7000 is a reasonable number, to give you three checkpoints for a 35000 step run, but you could also set it to 35000 for quickest run time (as the final minimization and packing steps will only need to be run one time).
 path_to_script = 'ddG-backrub.xml'
 
+if not os.path.isfile(rosetta_scripts_path):
+    print('ERROR: "rosetta_scripts_path" variable must be set to the location of the "rosetta_scripts" binary executable')
+    print('This file might look something like: "rosetta_scripts.linuxgccrelease"')
+    raise Exception('Rosetta scripts missing')
+
 def run_flex_ddg( name, input_path, input_pdb_path, chains_to_move, nstruct_i ):
     output_directory = os.path.join( 'output', os.path.join( name, '%02d' % nstruct_i ) )
     if not os.path.isdir(output_directory):

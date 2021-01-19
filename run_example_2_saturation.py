@@ -26,6 +26,11 @@ backrub_trajectory_stride = 5 # Can be whatever you want, if you would like to s
 path_to_script = 'ddG-backrub.xml'
 residue_to_mutate = ('B', 49, '') # Residue position to perfrom saturation mutatagenesis. Format: (Chain, PDB residue number, insertion code).
 
+if not os.path.isfile(rosetta_scripts_path):
+    print('ERROR: "rosetta_scripts_path" variable must be set to the location of the "rosetta_scripts" binary executable')
+    print('This file might look something like: "rosetta_scripts.linuxgccrelease"')
+    raise Exception('Rosetta scripts missing')
+
 def run_flex_ddg_saturation( name, input_path, input_pdb_path, chains_to_move, mut_aa, nstruct_i ):
     output_directory = os.path.join( 'output_saturation', os.path.join( '%s_%s' % (name, mut_aa), '%02d' % nstruct_i ) )
     if not os.path.isdir(output_directory):
