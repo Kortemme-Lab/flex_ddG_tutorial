@@ -30,8 +30,8 @@ Usage
 -----
     python3 reprocess_per_chain.py <output_folder> [--stride N] [--chains A,B] [--csv out.csv]
 
---stride must match the backrub_trajectory_stride you ran with (default 5, as in the tutorial).
-It only affects the checkpoint labels, not any energy.
+The backrub_trajectory_stride is read back out of each struct.db3, so --stride is only needed
+for databases that do not record it. It affects the checkpoint labels, not any energy.
 """
 
 import argparse
@@ -44,6 +44,8 @@ import sys
 
 import numpy as np
 import pandas as pd
+
+import flex_ddg_db3
 
 rosetta_scripts_path = os.path.expanduser('~/rosetta/source/bin/rosetta_scripts')
 
@@ -174,8 +176,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('output_folder', help='flex ddG output folder (e.g. "output")')
-    parser.add_argument('--stride', type=int, default=5,
-                        help='backrub_trajectory_stride used in the original run (default 5)')
+    parser.add_argument('--stride', type=int, default=None,
+                        help='override backrub_trajectory_stride instead of reading it from each '
+                             'struct.db3. Affects checkpoint labels only, not any energy.')
     parser.add_argument('--chains', default=None,
                         help='comma-separated chains (default: auto-detect from struct.db3)')
     parser.add_argument('--csv', default=None, help='write the full per-structure table here')
@@ -211,7 +214,15 @@ def main():
             print('  [%d/%d] %s' % (i, len(struct_db3s), struct_dir))
             out_db3 = rescore_one(struct_db3, protocol_path)
 
-        frames.append(read_per_chain_db3(out_db3, struct_number, case_name, args.stride))
+        stride = args.stride
+        if stride is None:
+            stride = flex_ddg_db3.trajectory_stride_from_db3(struct_db3)
+        if stride is None:
+            stride = 5
+            print('    WARNING: %s does not record backrub_trajectory_stride; assuming %d. '
+                  'Pass --stride to label the checkpoints correctly.' % (struct_db3, stride))
+
+        frames.append(read_per_chain_db3(out_db3, struct_number, case_name, stride))
 
     per_structure = pd.concat(frames)
     wide = per_structure[per_structure['pose'].isin(['wt', 'mut'])].pivot_table(

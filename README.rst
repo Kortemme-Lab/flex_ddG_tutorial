@@ -9,9 +9,9 @@ Introduction
 
 In this activity, you will utilize the Flex ddG [KB2018]_ protocol within Rosetta to computationally model and predict changes in binding free energies upon mutation (interface ΔΔG).
 
-This protocol uses the "backrub" protocol [CS2018]_ implemented in `Rosetta <https://www.rosettacommons.org>`_ to sample conformational diversity.
+This protocol uses the "backrub" protocol [CS2008]_ implemented in `Rosetta <https://www.rosettacommons.org>`_ to sample conformational diversity.
 
-It is recommeded that you use weekly release "Rosetta 2017.52", which was released on Wednesday, January 3, 2018. More recent versions of Rosetta may not be able to run this tutorial.
+This tutorial was originally written against weekly release "Rosetta 2017.52", released on Wednesday, January 3, 2018, and that release is still the reference version for the published benchmark numbers. More recent releases also work: the tutorial has been verified to run unmodified on Rosetta 2022.45 (release-334). If you use a newer Rosetta, note that predicted ΔΔG values will not reproduce the 2017.52 numbers to the last decimal place, since the underlying score function implementation has continued to change.
 
 The flex ddG protocol is outlined below (Fig 1. from [KB2018]_):
 
@@ -39,21 +39,21 @@ Example 1: Run Flex ddG on a specific set of mutations
    * ``max_minimization_iter=`` is the maximum number of minimization gradient descent steps to take. 5000 is the normal, benchmarked value.
    * ``abs_score_convergence_thresh=`` is the maximum allowed change in total model score after minimization (comparing initial score to score after minimization). If this change exceeds this threshold, then another minimization cycle will be started.
    * ``backrub_trajectory_stride=`` after every N backrub steps, finish the flex ddG calculations. This allows protocol performance to be judged at intermediate number of backrub sampling steps without running a separate trajectory. In general, this can be set to the same number as ``number_backrub_trials``, but it may be useful for benchmarking purposes to set this at an intermediate value.
-   * ``chainstomove=`` This arguments is passed as a Rosetta Script variable to the InterfaceDdGMover as the "chain_name" argument. It defines one side of the interface by specifying all of the chains that make up that side. Can be a single chain as in "B" or multiple chains, as in "L,H".
+   * ``chainstomove=`` This argument is passed as a Rosetta Script variable to the InterfaceDdGMover as the "chain_name" argument. It defines one side of the interface by specifying all of the chains that make up that side. Can be a single chain as in "B" or multiple chains, as in "L,H".
 
 #. Output will be saved in a new directory named ``output``
 
 Example 2: Run Flex ddG for single site saturation mutagenesis
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-This example covers the commonly desired use case is to evaluate the energies of all possible mutations at a single residue site in the interface.
+This example covers the commonly desired use case of evaluating the energies of all possible mutations at a single residue site in the interface.
 To do this in Rosetta, it is necessary to create a resfile for each possible amino acid mutation, and run the flex ddG protocol with each of these resfile as inputs.
-In this example, ``run_example_2.py`` is a modified version of the first example script that has been modified to automatically create resfiles for all 20 possible canonical amino acid mutations, and then run flex ddG on those resfiles.
+In this example, ``run_example_2_saturation.py`` is a modified version of the first example script that has been modified to automatically create resfiles for all 20 possible canonical amino acid mutations, and then run flex ddG on those resfiles.
 You can also create the resfiles yourself manually before running the protocol.
 
-1. From within your downloaded copy of this tutorial, open ``run_example_2.py`` in your editor of choice.
-#. Find the ``rosetta_scripts_path`` at the top of ``run_example_2.py`` and check that it is set to the appropriate location of your compiled Rosetta rosetta_scripts binary.
-#. Run ``python run_example_2.py``. The full command line call to each instance of Rosetta will be displayed.
+1. From within your downloaded copy of this tutorial, open ``run_example_2_saturation.py`` in your editor of choice.
+#. Find the ``rosetta_scripts_path`` at the top of ``run_example_2_saturation.py`` and check that it is set to the appropriate location of your compiled Rosetta rosetta_scripts binary.
+#. Run ``python run_example_2_saturation.py``. The full command line call to each instance of Rosetta will be displayed.
 #. Output will be saved in a new directory named ``output_saturation``
 
 Analysis
@@ -78,7 +78,9 @@ Or for example 2:
 
   python analyze_flex_ddG.py output_saturation
 
-The script will print to the terminal (in separate table blocks) the wild type interface binding ΔG score (wt_dG), the mutant interface ΔG (mut_dG), and the ΔΔG of binding post-mutation. These scores are also written to a .csv file in analysis_output. Scores for both of the checkpoint steps (5 backrub steps and 10 backrub steps) are calculated. For the mutant ΔΔG, the ΔΔG score is also calculated and reweighted with the fitted GAM model [KB2018]_.
+The script will print to the terminal (in separate table blocks) the wild type interface binding ΔG score (wt_dG), the mutant interface ΔG (mut_dG), and the ΔΔG of binding post-mutation. These scores are also written to a .csv file in analysis_output. Scores are reported separately for each checkpoint of the backrub trajectory (with the tutorial's default settings, 5 backrub steps and 10 backrub steps). For the mutant ΔΔG, the ΔΔG score is also calculated and reweighted with the fitted GAM model [KB2018]_.
+
+The ``backrub_steps`` column is labelled using the ``backrub_trajectory_stride`` that each run was launched with, which the script reads back out of the run's own ``ddG.db3``. You therefore do not need to edit the analysis script to match your run. If a database does not record the stride, the script warns and falls back to a default of 5; pass ``--stride N`` to override it. The stride affects only the checkpoint labels, never any energy.
 
 Extract structures
 ^^^^^^^^^^^^^^^^^^
@@ -90,6 +92,8 @@ If you are interested in viewing or using the generated backrub, wildtype minimi
    python3 extract_structures.py output
 
 The script will recursively find all output struct.db3 files, run Rosetta to output PDBs, and rename the PDBs to more informative names.
+
+Note that extraction uses the ``score_jd2`` binary rather than ``rosetta_scripts``. This is a separate executable, built alongside ``rosetta_scripts`` by the standard Rosetta build. Check the ``score_jd2_path`` variable near the top of ``extract_structures.py`` and set it to the location of your compiled binary. As above, the extracted PDBs are named using the stride read back out of each ``struct.db3``, and ``--stride N`` overrides it.
 
 Additional reading
 ------------------

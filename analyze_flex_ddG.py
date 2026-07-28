@@ -9,15 +9,22 @@ from pprint import pprint
 import pandas as pd
 import numpy as np
 import re
+import argparse
 import datetime
 import sys
 import collections
 import threading
 
+import flex_ddg_db3
+
 rosetta_output_file_name = 'rosetta.out'
 output_database_name = 'ddG.db3'
-trajectory_stride = 5
 script_output_folder = 'analysis_output'
+
+# Only a fallback. The stride each run actually used is read back out of its own ddG.db3, so
+# runs with different strides analyze correctly and nothing here needs editing to match a run.
+# This value is used only when the database does not record it, and a warning is printed.
+default_trajectory_stride = 5
 
 zemu_gam_params = {
     'fa_sol' :      (6.940, -6.722),
@@ -75,7 +82,7 @@ def find_finished_jobs( output_folder ):
 
     return return_dict
 
-def get_scores_from_db3_file(db3_file, struct_number, case_name):
+def get_scores_from_db3_file(db3_file, struct_number, case_name, trajectory_stride):
     conn = sqlite3.connect(db3_file)
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
@@ -106,7 +113,7 @@ def get_scores_from_db3_file(db3_file, struct_number, case_name):
 
     return scores
 
-def get_per_chain_scores_from_db3_file(db3_file, struct_number, case_name):
+def get_per_chain_scores_from_db3_file(db3_file, struct_number, case_name, trajectory_stride):
     '''Read the per-chain intramolecular energies written by the per-chain protocol variant
     (see per_chain_protocol.py). Returns None if the run did not report them.
 
@@ -181,12 +188,28 @@ def calc_per_chain_ddg( scores ):
     summary['ddG_sem'] = summary['ddG_sd'] / np.sqrt( summary['nstruct'] )
     return summary.round(decimals=5)
 
-def process_finished_struct( output_path, case_name ):
+def resolve_trajectory_stride( db3_file, stride_override = None ):
+    '''Stride to label this database's checkpoints with, preferring what the run recorded.'''
+    if stride_override is not None:
+        return stride_override
+
+    stride = flex_ddg_db3.trajectory_stride_from_db3( db3_file )
+    if stride is not None:
+        return stride
+
+    print( 'WARNING: %s does not record backrub_trajectory_stride; assuming %d.' % (
+        db3_file, default_trajectory_stride ) )
+    print( '         If the run used a different stride, pass --stride to label the' )
+    print( '         checkpoints correctly. This affects labels only, not any energy.' )
+    return default_trajectory_stride
+
+def process_finished_struct( output_path, case_name, stride_override = None ):
     db3_file = os.path.join( output_path, output_database_name )
     assert( os.path.isfile( db3_file ) )
     struct_number = int( os.path.basename(output_path) )
-    scores_df = get_scores_from_db3_file( db3_file, struct_number, case_name )
-    per_chain_df = get_per_chain_scores_from_db3_file( db3_file, struct_number, case_name )
+    trajectory_stride = resolve_trajectory_stride( db3_file, stride_override )
+    scores_df = get_scores_from_db3_file( db3_file, struct_number, case_name, trajectory_stride )
+    per_chain_df = get_per_chain_scores_from_db3_file( db3_file, struct_number, case_name, trajectory_stride )
 
     return scores_df, per_chain_df
 
@@ -249,7 +272,7 @@ def calc_dgs( scores ):
             l.append( dg_scores )
     return l
 
-def analyze_output_folder( output_folder ):
+def analyze_output_folder( output_folder, stride_override = None ):
     # Pass in an outer output folder. Subdirectories are considered different mutation cases, with subdirectories of different structures.
     finished_jobs = find_finished_jobs( output_folder )
     if len(finished_jobs) == 0:
@@ -263,7 +286,7 @@ def analyze_output_folder( output_folder ):
         inner_scores_list = []
         inner_per_chain_list = []
         for finished_struct in finished_structs:
-            inner_scores, inner_per_chain = process_finished_struct( finished_struct, os.path.basename(finished_job) )
+            inner_scores, inner_per_chain = process_finished_struct( finished_struct, os.path.basename(finished_job), stride_override )
             inner_scores_list.append( inner_scores )
             if inner_per_chain is not None:
                 inner_per_chain_list.append( inner_per_chain )
@@ -306,6 +329,16 @@ def analyze_output_folder( output_folder ):
         print( '' )
 
 if __name__ == '__main__':
-    for folder_to_analyze in sys.argv[1:]:
+    parser = argparse.ArgumentParser(
+        description = 'Analyze one or more flex ddG output folders (e.g. "output").' )
+    parser.add_argument( 'output_folders', nargs = '+', help = 'flex ddG output folder(s)' )
+    parser.add_argument( '--stride', type = int, default = None,
+                         help = 'override backrub_trajectory_stride instead of reading it from'
+                                ' each ddG.db3. Affects checkpoint labels only, not any energy.' )
+    parsed_args = parser.parse_args()
+
+    for folder_to_analyze in parsed_args.output_folders:
         if os.path.isdir( folder_to_analyze ):
-            analyze_output_folder( folder_to_analyze )
+            analyze_output_folder( folder_to_analyze, parsed_args.stride )
+        else:
+            print( 'ERROR: %s is not a valid directory' % folder_to_analyze )

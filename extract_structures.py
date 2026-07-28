@@ -2,6 +2,8 @@
 
 import os
 import sys
+import argparse
+import functools
 import subprocess
 import re
 import shutil
@@ -9,6 +11,8 @@ import datetime
 import math
 import collections
 import threading
+
+import flex_ddg_db3
 
 use_multiprocessing = False
 if use_multiprocessing:
@@ -114,13 +118,34 @@ class Reporter:
         if self.completion_time:
             return self.completion_time - self.start
         else:
-            return time.time() - self.start
+            return datetime.datetime.now() - self.start
 
 
 struct_db3_file = 'struct.db3'
 
-# Important - to correctly name extracted structures by the stride, this trajectory_stride must be used
-trajectory_stride = 5
+# Extraction uses the score_jd2 binary, not rosetta_scripts. It is built alongside
+# rosetta_scripts by the standard Rosetta build, but is a separate executable.
+score_jd2_path = os.path.expanduser( '~/rosetta/source/bin/score_jd2' )
+
+# Only a fallback. Extracted structures are named by how many backrub steps produced them, so
+# the stride each run used is read back out of its own struct.db3. This value is used only when
+# the database does not record it, and a warning is printed.
+default_trajectory_stride = 5
+
+def resolve_trajectory_stride( struct_db, stride_override = None ):
+    '''Stride to name this database's extracted PDBs with, preferring what the run recorded.'''
+    if stride_override is not None:
+        return stride_override
+
+    stride = flex_ddg_db3.trajectory_stride_from_db3( struct_db )
+    if stride is not None:
+        return stride
+
+    print( 'WARNING: %s does not record backrub_trajectory_stride; assuming %d.' % (
+        struct_db, default_trajectory_stride ) )
+    print( '         If the run used a different stride, pass --stride, or the extracted PDBs' )
+    print( '         will be named with the wrong backrub step counts.' )
+    return default_trajectory_stride
 
 def recursive_find_struct_dbs( input_dir ):
     return_list = []
@@ -135,7 +160,7 @@ def recursive_find_struct_dbs( input_dir ):
 
 def extract_structures( struct_db, rename_function = None ):
     args = [
-        os.path.expanduser( '~/rosetta/source/bin/score_jd2' ),
+        os.path.abspath( score_jd2_path ),
         '-inout:dbms:database_name', struct_db3_file,
         '-in:use_database',
         '-out:pdb',
@@ -148,27 +173,31 @@ def extract_structures( struct_db, rename_function = None ):
     rosetta_outfile = open( rosetta_outfile_path, 'w')
     if not use_multiprocessing:
         print( ' '.join( args ) )
+    # No shell: joining the arguments into a string breaks as soon as a path contains a space.
     rosetta_process = subprocess.Popen(
-        ' '.join(args),
-        stdout=rosetta_outfile, stderr=subprocess.STDOUT, close_fds = True, cwd = working_directory, shell = True,
+        args,
+        stdout=rosetta_outfile, stderr=subprocess.STDOUT, close_fds = True, cwd = working_directory,
     )
     return_code = rosetta_process.wait()
     rosetta_outfile.close()
 
     if return_code == 0:
         os.remove( rosetta_outfile_path )
+    else:
+        print( 'ERROR: score_jd2 failed on %s (exit %d) -- see %s' % (
+            struct_db, return_code, rosetta_outfile_path ) )
+        return return_code
 
     if rename_function != None:
-        output_pdbs = []
         for path in [ os.path.join( working_directory, x ) for x in os.listdir( working_directory ) ]:
-            m = re.match( '(\d+)_0001.pdb', os.path.basename(path) )
+            m = re.match( r'(\d+)_0001\.pdb$', os.path.basename(path) )
             if m:
                 dest_path = os.path.join( working_directory, rename_function( int(m.group(1)) ) )
                 shutil.move( path, dest_path )
 
     return return_code
 
-def flex_ddG_rename(struct_id):
+def flex_ddG_rename(struct_id, trajectory_stride):
     steps = [
         'backrub',
         'wt',
@@ -177,7 +206,7 @@ def flex_ddG_rename(struct_id):
 
     return '%s_%05d.pdb' % ( steps[ (struct_id-1) % len(steps) ], (((struct_id-1) // len(steps)) + 1) * trajectory_stride )
 
-def main( input_dir ):
+def main( input_dir, stride_override = None ):
     struct_dbs = recursive_find_struct_dbs( input_dir )
     print( 'Found {:d} structure database files to extract'.format( len(struct_dbs) ) )
 
@@ -187,16 +216,21 @@ def main( input_dir ):
     r.set_total_count( len(struct_dbs) )
 
     for struct_db in struct_dbs:
+        # Each database is named using the stride its own run was launched with.
+        # functools.partial rather than a lambda, so that this stays picklable for the
+        # multiprocessing path below.
+        stride = resolve_trajectory_stride( struct_db, stride_override )
+        rename_function = functools.partial( flex_ddG_rename, trajectory_stride = stride )
         if use_multiprocessing:
             pool.apply_async(
                 extract_structures,
                 args = (struct_db,),
-                kwds = {'rename_function' : flex_ddG_rename},
+                kwds = {'rename_function' : rename_function},
                 callback = r.increment_report_callback
             )
         else:
             r.increment_report_callback(
-                extract_structures( struct_db, rename_function = flex_ddG_rename )
+                extract_structures( struct_db, rename_function = rename_function )
             )
 
     if use_multiprocessing:
@@ -205,8 +239,22 @@ def main( input_dir ):
     r.done()
 
 if __name__ == '__main__':
-    for x in sys.argv[1:]:
+    parser = argparse.ArgumentParser(
+        description = 'Extract PDBs from the struct.db3 files under a flex ddG output folder.' )
+    parser.add_argument( 'output_folders', nargs = '+', help = 'flex ddG output folder(s)' )
+    parser.add_argument( '--stride', type = int, default = None,
+                         help = 'override backrub_trajectory_stride instead of reading it from'
+                                ' each struct.db3. Affects extracted PDB names only.' )
+    parsed_args = parser.parse_args()
+
+    if not os.path.isfile( score_jd2_path ):
+        print( 'ERROR: "score_jd2_path" variable must be set to the location of the "score_jd2" binary executable' )
+        print( 'This file might look something like: "score_jd2.linuxgccrelease"' )
+        print( 'Note that this is a different executable from the "rosetta_scripts" binary used to run flex ddG' )
+        raise Exception( 'score_jd2 missing' )
+
+    for x in parsed_args.output_folders:
         if os.path.isdir(x):
-            main( x )
+            main( x, parsed_args.stride )
         else:
             print( 'ERROR: %s is not a valid directory' % x )
