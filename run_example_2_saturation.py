@@ -39,7 +39,12 @@ def run_flex_ddg_saturation( name, input_path, input_pdb_path, chains_to_move, m
     mutation_chain, mutation_resi, mutation_icode = residue_to_mutate
     resfile_path = os.path.join( output_directory, 'mutate_%s%d%s_to_%s.resfile' % (mutation_chain, mutation_resi, mutation_icode, mut_aa) )
     with open( resfile_path, 'w') as f:
-        f.write( 'NATRO\nstart\n%d%s %s PIKAA %s\n' % (mutation_resi, mutation_icode, mutation_chain, mut_aa) )
+        # Header must be NATAA, not NATRO. This resfile is used both to pick the mutated
+        # position and as the task operation for the mutant PackRotamersMover. With NATRO,
+        # the mutant branch freezes the 8 A neighbor shell while the wild type branch
+        # repacks it, which biases every ddG upwards by several REU (a self-mutation to the
+        # native amino acid comes out at +6 instead of 0).
+        f.write( 'NATAA\nstart\n%d%s %s PIKAA %s\n' % (mutation_resi, mutation_icode, mutation_chain, mut_aa) )
 
     flex_ddg_args = [
         os.path.abspath(rosetta_scripts_path),

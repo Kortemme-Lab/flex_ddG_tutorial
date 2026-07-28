@@ -106,13 +106,89 @@ def get_scores_from_db3_file(db3_file, struct_number, case_name):
 
     return scores
 
+def get_per_chain_scores_from_db3_file(db3_file, struct_number, case_name):
+    '''Read the per-chain intramolecular energies written by the per-chain protocol variant
+    (see per_chain_protocol.py). Returns None if the run did not report them.
+
+    Only the unbound states are meaningful here: the chains are 1000 A apart, so there are no
+    cross-chain pair energies and each value is exactly that chain's intramolecular energy. On
+    the bound states the value additionally carries roughly half the interface energy, because
+    Rosetta splits each two-body term between its two residues.
+
+    Note that chain IDs come back lowercased, because Rosetta lowercases database table names.
+    Chain "A" appears here as "a". per_chain_protocol.py refuses to set up a run whose chain IDs
+    differ only by case, so this stays unambiguous.
+    '''
+    conn = sqlite3.connect(db3_file)
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+
+    chain_tables = [ row[0] for row in c.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'chain\\_%\\_energy' ESCAPE '\\'"
+    ).fetchall() ]
+    if len(chain_tables) == 0:
+        conn.close()
+        return None
+
+    num_batches = c.execute('SELECT max(batch_id) from batches').fetchone()[0]
+
+    dfs = []
+    for table in chain_tables:
+        chain = table[len('chain_'):-len('_energy')]
+        df = pd.read_sql_query('''
+        SELECT batches.name, %s.struct_id, %s.total_energy from %s
+        INNER JOIN structures ON structures.struct_id=%s.struct_id
+        INNER JOIN batches ON batches.batch_id=structures.batch_id
+        ''' % (table, table, table, table), conn)
+        df['chain'] = chain
+        dfs.append(df)
+    conn.close()
+
+    scores = pd.concat( dfs )
+    scores['struct_id'] = scores['struct_id'].apply(
+        lambda struct_id: trajectory_stride * ( 1 + (int(struct_id-1) // num_batches) ) )
+    scores['name'] = scores['name'].apply( lambda x: x[:-9] if x.endswith('_dbreport') else x )
+    scores.rename( columns = {
+        'name' : 'state',
+        'struct_id' : 'backrub_steps',
+        'total_energy' : 'intra_energy',
+    }, inplace=True)
+    scores['struct_num'] = struct_number
+    scores['case_name'] = case_name
+
+    return scores
+
+def calc_per_chain_ddg( scores ):
+    '''Per-chain intramolecular ddG, read off the unbound states and averaged over nstruct.'''
+    unbound = scores.loc[ scores['state'].isin(['unbound_wt', 'unbound_mut']) ].copy()
+    if len(unbound) == 0:
+        return None
+
+    wide = unbound.pivot_table(
+        index = ['case_name', 'chain', 'backrub_steps', 'struct_num'],
+        columns = 'state', values = 'intra_energy' ).reset_index()
+    if 'unbound_wt' not in wide.columns or 'unbound_mut' not in wide.columns:
+        return None
+    wide['ddG'] = wide['unbound_mut'] - wide['unbound_wt']
+
+    summary = wide.groupby( ['case_name', 'chain', 'backrub_steps'] ).agg(
+        nstruct = ('ddG', 'size'),
+        wt_intra = ('unbound_wt', 'mean'),
+        mut_intra = ('unbound_mut', 'mean'),
+        ddG = ('ddG', 'mean'),
+        ddG_sd = ('ddG', 'std'),
+    ).reset_index()
+    summary['ddG_sem'] = summary['ddG_sd'] / np.sqrt( summary['nstruct'] )
+    return summary.round(decimals=5)
+
 def process_finished_struct( output_path, case_name ):
     db3_file = os.path.join( output_path, output_database_name )
     assert( os.path.isfile( db3_file ) )
     struct_number = int( os.path.basename(output_path) )
     scores_df = get_scores_from_db3_file( db3_file, struct_number, case_name )
+    per_chain_df = get_per_chain_scores_from_db3_file( db3_file, struct_number, case_name )
 
-    return scores_df
+    return scores_df, per_chain_df
 
 def calc_ddg( scores ):
     total_structs = np.max( scores['struct_num'] )
@@ -129,13 +205,13 @@ def calc_ddg( scores ):
         for column in ddg_scores.columns:
             if column not in ['state', 'case_name', 'backrub_steps', 'struct_num', 'score_function_name']:
                 ddg_scores.loc[:,column] *= -1.0
-        ddg_scores = ddg_scores.append( scores.loc[ ((scores['state'] == 'unbound_wt') | (scores['state'] == 'bound_mut')) & (scores['struct_num'] <= nstructs) ].copy() )
-        ddg_scores = ddg_scores.groupby( ['case_name', 'backrub_steps', 'struct_num', 'score_function_name'] ).sum().reset_index()
+        ddg_scores = pd.concat( [ ddg_scores, scores.loc[ ((scores['state'] == 'unbound_wt') | (scores['state'] == 'bound_mut')) & (scores['struct_num'] <= nstructs) ].copy() ] )
+        ddg_scores = ddg_scores.groupby( ['case_name', 'backrub_steps', 'struct_num', 'score_function_name'] ).sum( numeric_only = True ).reset_index()
 
         if nstructs == total_structs:
             struct_scores = ddg_scores.copy()
 
-        ddg_scores = ddg_scores.groupby( ['case_name', 'backrub_steps', 'score_function_name'] ).mean().round(decimals=5).reset_index()
+        ddg_scores = ddg_scores.groupby( ['case_name', 'backrub_steps', 'score_function_name'] ).mean( numeric_only = True ).round(decimals=5).reset_index()
         new_columns = list(ddg_scores.columns.values)
         new_columns.remove( 'struct_num' )
         ddg_scores = ddg_scores[new_columns]
@@ -162,9 +238,9 @@ def calc_dgs( scores ):
             for column in dg_scores.columns:
                 if column not in ['state', 'case_name', 'backrub_steps', 'struct_num', 'score_function_name']:
                     dg_scores.loc[:,column] *= -1.0
-            dg_scores = dg_scores.append( scores.loc[ (scores['state'].str.endswith(state)) & (scores['state'].str.startswith('bound')) & (scores['struct_num'] <= nstructs) ].copy() )
-            dg_scores = dg_scores.groupby( ['case_name', 'backrub_steps', 'struct_num', 'score_function_name'] ).sum().reset_index()
-            dg_scores = dg_scores.groupby( ['case_name', 'backrub_steps', 'score_function_name'] ).mean().round(decimals=5).reset_index()
+            dg_scores = pd.concat( [ dg_scores, scores.loc[ (scores['state'].str.endswith(state)) & (scores['state'].str.startswith('bound')) & (scores['struct_num'] <= nstructs) ].copy() ] )
+            dg_scores = dg_scores.groupby( ['case_name', 'backrub_steps', 'struct_num', 'score_function_name'] ).sum( numeric_only = True ).reset_index()
+            dg_scores = dg_scores.groupby( ['case_name', 'backrub_steps', 'score_function_name'] ).mean( numeric_only = True ).round(decimals=5).reset_index()
             new_columns = list(dg_scores.columns.values)
             new_columns.remove( 'struct_num' )
             dg_scores = dg_scores[new_columns]
@@ -182,12 +258,20 @@ def analyze_output_folder( output_folder ):
 
     ddg_scores_dfs = []
     struct_scores_dfs = []
+    per_chain_dfs = []
     for finished_job, finished_structs in finished_jobs.items():
         inner_scores_list = []
+        inner_per_chain_list = []
         for finished_struct in finished_structs:
-            inner_scores = process_finished_struct( finished_struct, os.path.basename(finished_job) )
+            inner_scores, inner_per_chain = process_finished_struct( finished_struct, os.path.basename(finished_job) )
             inner_scores_list.append( inner_scores )
+            if inner_per_chain is not None:
+                inner_per_chain_list.append( inner_per_chain )
         scores = pd.concat( inner_scores_list )
+        if len(inner_per_chain_list) > 0:
+            per_chain_summary = calc_per_chain_ddg( pd.concat( inner_per_chain_list ) )
+            if per_chain_summary is not None:
+                per_chain_dfs.append( per_chain_summary )
         ddg_scores, struct_scores = calc_ddg( scores )
         struct_scores_dfs.append( struct_scores )
         ddg_scores_dfs.append( ddg_scores )
@@ -207,6 +291,18 @@ def analyze_output_folder( output_folder ):
     for score_type in ['mut_dG', 'wt_dG', 'ddG']:
         print( score_type )
         print( df.loc[ df['scored_state'] == score_type ][display_columns].head( n = 20 ) )
+        print( '' )
+
+    if len(per_chain_dfs) > 0:
+        per_chain = pd.concat( per_chain_dfs )
+        per_chain.to_csv( os.path.join(script_output_folder, basename + '-per_chain_results.csv'), index = False )
+        print( 'per-chain intramolecular ddG (from the unbound states)' )
+        print( per_chain.head( n = 40 ).to_string(index = False) )
+        print( '' )
+        print( 'NOTE: this is the intramolecular strain difference in the *bound* backbone' )
+        print( '      conformation, not a folding ddG -- the unbound state is never relaxed.' )
+        print( '      A chain you did not mutate should come out at ~0 +/- ddG_sem; if it does' )
+        print( '      not, nstruct is too low to average out the whole-pose minimization noise.' )
         print( '' )
 
 if __name__ == '__main__':

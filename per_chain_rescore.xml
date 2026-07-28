@@ -1,0 +1,66 @@
+<ROSETTASCRIPTS>
+  <!--
+    Reprocess an EXISTING flex ddG run to recover per-chain intramolecular energies.
+
+    No re-sampling is needed: struct.db3 already holds the coordinates of every backrub,
+    wild type minimized, and mutant minimized pose. This protocol reads those poses back in,
+    isolates one chain at a time, and reports the isolated chain's total score.
+
+    Isolating the chain matters. A Chain residue selector alone is not enough, because
+    struct.db3 stores the *bound* poses, so a selector-scoped metric still picks up cross-chain
+    pair energies (roughly half the interface energy leaks into each chain). Deleting the other
+    chains reproduces the separated, unrelaxed unbound state exactly, because intra-chain
+    energy is invariant under the rigid-body translation InterfaceDdGMover uses to unbind.
+
+    Chain selectors below are for a two chain A/B complex. Add one Chain selector, one
+    DeleteRegionMover, one ReportToDB and one restore/delete/report triple per extra chain.
+
+    Usage (run once per struct.db3, from the directory containing it):
+
+      rosetta_scripts -inout:dbms:database_name struct.db3 -in:use_database \
+                      -parser:protocol per_chain_rescore.xml \
+                      -restore_talaris_behavior -in:file:fullatom -out:nooutput
+
+    Then read per_chain.db3 with reprocess_per_chain.py.
+  -->
+  <SCOREFXNS>
+    <ScoreFunction name="fa_talaris2014" weights="talaris2014"/>
+  </SCOREFXNS>
+
+  <RESIDUE_SELECTORS>
+    <Chain name="chain_A" chains="A"/>
+    <Chain name="chain_B" chains="B"/>
+    <Not name="not_chain_A" selector="chain_A"/>
+    <Not name="not_chain_B" selector="chain_B"/>
+  </RESIDUE_SELECTORS>
+
+  <MOVERS>
+    <SavePoseMover name="save_full" reference_name="full_pose" restore_pose="0"/>
+    <SavePoseMover name="restore_full" reference_name="full_pose" restore_pose="1"/>
+
+    <DeleteRegionMover name="isolate_chain_A" residue_selector="not_chain_A"/>
+    <DeleteRegionMover name="isolate_chain_B" residue_selector="not_chain_B"/>
+
+    <ReportToDB name="chain_A_report" batch_description="per_chain" database_name="per_chain.db3">
+      <ScoreTypeFeatures/>
+      <ScoreFunctionFeatures scorefxn="fa_talaris2014"/>
+      <StructureScoresFeatures scorefxn="fa_talaris2014"/>
+    </ReportToDB>
+    <ReportToDB name="chain_B_report" batch_description="per_chain" database_name="per_chain.db3">
+      <ScoreTypeFeatures/>
+      <ScoreFunctionFeatures scorefxn="fa_talaris2014"/>
+      <StructureScoresFeatures scorefxn="fa_talaris2014"/>
+    </ReportToDB>
+  </MOVERS>
+
+  <PROTOCOLS>
+    <Add mover_name="save_full"/>
+    <Add mover_name="isolate_chain_A"/>
+    <Add mover_name="chain_A_report"/>
+
+    <Add mover_name="restore_full"/>
+    <Add mover_name="isolate_chain_B"/>
+    <Add mover_name="chain_B_report"/>
+  </PROTOCOLS>
+  <OUTPUT />
+</ROSETTASCRIPTS>

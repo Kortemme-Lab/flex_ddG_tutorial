@@ -25,10 +25,28 @@ number_backrub_trials = 10 # Normally 35000
 backrub_trajectory_stride = 5 # Can be whatever you want, if you would like to see results from earlier time points in the backrub trajectory. 7000 is a reasonable number, to give you three checkpoints for a 35000 step run, but you could also set it to 35000 for quickest run time (as the final minimization and packing steps will only need to be run one time).
 path_to_script = 'ddG-backrub.xml'
 
+# Additionally report the intramolecular energy of each individual chain into ddG.db3.
+# This is reporting only: it adds no sampling, consumes no random numbers, and leaves the
+# binding ddG bit-identical. Read the per-chain numbers off the *unbound* states, where the
+# chains are 1000 A apart and the value is exactly that chain's intramolecular energy.
+# See per_chain_protocol.py for the full explanation and caveats.
+report_per_chain_energies = False
+
 if not os.path.isfile(rosetta_scripts_path):
     print('ERROR: "rosetta_scripts_path" variable must be set to the location of the "rosetta_scripts" binary executable')
     print('This file might look something like: "rosetta_scripts.linuxgccrelease"')
     raise Exception('Rosetta scripts missing')
+
+def protocol_for( input_pdb_path ):
+    """Return the XML to run, generating the per-chain reporting variant if requested."""
+    if not report_per_chain_energies:
+        return os.path.abspath(path_to_script)
+
+    import per_chain_protocol
+    chains = per_chain_protocol.chains_in_pdb( input_pdb_path )
+    derived = os.path.abspath( os.path.splitext(path_to_script)[0] + '-per_chain.xml' )
+    per_chain_protocol.write_per_chain_protocol( path_to_script, chains, derived )
+    return derived
 
 def run_flex_ddg( name, input_path, input_pdb_path, chains_to_move, nstruct_i ):
     output_directory = os.path.join( 'output', os.path.join( name, '%02d' % nstruct_i ) )
@@ -38,7 +56,7 @@ def run_flex_ddg( name, input_path, input_pdb_path, chains_to_move, nstruct_i ):
     flex_ddg_args = [
         os.path.abspath(rosetta_scripts_path),
         "-s %s" % os.path.abspath(input_pdb_path),
-        '-parser:protocol', os.path.abspath(path_to_script),
+        '-parser:protocol', protocol_for( input_pdb_path ),
         '-parser:script_vars',
         'chainstomove=' + chains_to_move,
         'mutate_resfile_relpath=' + os.path.abspath( os.path.join( input_path, 'nataa_mutations.resfile' ) ),
